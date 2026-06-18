@@ -1,0 +1,8 @@
+config.properties
+*.class
+lib/
+quiz_history.json
+.vscode/
+src/quiz_*.txt
+src/quiz_*.json
+src/quiz_*.html
