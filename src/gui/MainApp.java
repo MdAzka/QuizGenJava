@@ -10,6 +10,8 @@ import model.Question;
 
 import javafx.application.Application;
 import javafx.concurrent.Task;
+import javafx.animation.FadeTransition;
+import javafx.util.Duration;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Scene;
@@ -28,7 +30,7 @@ import java.util.List;
 public class MainApp extends Application {
 
     // ── API Key ──────────────────────────────────────────────
-    private final String API_KEY = config.AppConfig.getApiKey();
+    private final List<String> API_KEYS = config.AppConfig.getApiKeys();
     // ── Warna tema ───────────────────────────────────────────
     private static final String C_BG        = "#F7F8FA";
     private static final String C_PANEL     = "#FFFFFF";
@@ -51,6 +53,7 @@ public class MainApp extends Application {
     private Label           labelStatus;
     private ListView<String> listRiwayat;
     private List<Question>  soalTerakhir = new ArrayList<>();
+    private Label labelSaran;
 
     @Override
     public void start(Stage stage) {
@@ -103,6 +106,8 @@ public class MainApp extends Application {
             "-fx-border-color: " + C_BORDER + "; -fx-border-radius: 6; -fx-background-radius: 6;"
         );
 
+        inputTeks.textProperty().addListener((obs, oldVal, newVal) -> updateSaranJumlahSoal(newVal));
+
         VBox panel = card();
         panel.setPrefWidth(370);
         VBox.setVgrow(inputTeks, Priority.ALWAYS);
@@ -143,6 +148,15 @@ public class MainApp extends Application {
         ColumnConstraints c1 = new ColumnConstraints(); c1.setPrefWidth(80);
         grid.getColumnConstraints().addAll(c0, c1);
 
+        labelSaran = new Label("Upload teks untuk lihat saran jumlah soal.");
+        labelSaran.setWrapText(true);
+        labelSaran.setStyle("-fx-font-size: 10px; -fx-text-fill: " + C_SUBTEXT + "; -fx-font-style: italic;");
+
+        Button btnPakaiSaran = new Button("Pakai Saran");
+        btnPakaiSaran.setMaxWidth(Double.MAX_VALUE);
+        btnPakaiSaran.setStyle(btnStyle("#00897B", "#FFFFFF") + "-fx-font-size: 11px;");
+        btnPakaiSaran.setOnAction(e -> pakaiSaranJumlahSoal());
+
         Separator sep1 = sep();
         Separator sep2 = sep();
 
@@ -169,6 +183,7 @@ public class MainApp extends Application {
             judulKesulitan, comboKesulitan,
             sep2,
             judulKonfig, grid,
+            labelSaran, btnPakaiSaran,
             new Separator(),
             btnGenerate,
             new Separator(),
@@ -211,20 +226,34 @@ public class MainApp extends Application {
         );
         VBox.setVgrow(listRiwayat, Priority.ALWAYS);
 
-        Button btnHapus = new Button("Hapus Riwayat");
-        btnHapus.setMaxWidth(Double.MAX_VALUE);
-        btnHapus.setStyle(btnStyle(C_DANGER, "#FFFFFF"));
-        btnHapus.setOnAction(e -> {
-            QuizHistoryManager.hapusSemua();
-            refreshRiwayat();
-        });
+        // Klik kanan -> context menu
+        ContextMenu menu = new ContextMenu();
+        MenuItem itemBukaFolder = new MenuItem("Buka Folder Output");
+        itemBukaFolder.setOnAction(e -> bukaFolderOutput());
+        MenuItem itemHapusSatu = new MenuItem("Hapus dari Riwayat");
+        itemHapusSatu.setOnAction(e -> hapusSatuRiwayat());
+        menu.getItems().addAll(itemBukaFolder, itemHapusSatu);
+        listRiwayat.setContextMenu(menu);
+Button btnBukaFolder = new Button("Buka Folder Output");
+    btnBukaFolder.setMaxWidth(Double.MAX_VALUE);
+    btnBukaFolder.setStyle(btnStyle("#455A64", "#FFFFFF"));
+    btnBukaFolder.setOnAction(e -> bukaFolderOutput());
 
-        VBox panel = card();
-        panel.setPrefWidth(200);
-        VBox.setVgrow(panel, Priority.ALWAYS);
-        panel.getChildren().addAll(judul, listRiwayat, btnHapus);
-        return panel;
-    }
+    Button btnHapus = new Button("Hapus Riwayat");
+    btnHapus.setMaxWidth(Double.MAX_VALUE);
+    btnHapus.setStyle(btnStyle(C_DANGER, "#FFFFFF"));
+    btnHapus.setOnAction(e -> {
+        QuizHistoryManager.hapusSemua();
+        refreshRiwayat();
+    });
+
+    VBox panel = card();
+    panel.setPrefWidth(200);
+    VBox.setVgrow(panel, Priority.ALWAYS);
+    panel.getChildren().addAll(judul, listRiwayat, btnBukaFolder, btnHapus);
+    return panel;
+}
+    
 
     // ════════════════════════════════════════════════════════
     // LOGIC
@@ -254,8 +283,8 @@ public class MainApp extends Application {
         Task<List<Question>> task = new Task<>() {
             @Override protected List<Question> call() throws Exception {
                 QuestionGenerator gen = comboMetode.getValue().contains("Gemini")
-                    ? new ApiBasedGenerator(API_KEY)
-                    : new RuleBasedGenerator();
+                ? new ApiBasedGenerator(API_KEYS)
+                : new RuleBasedGenerator();
                 return gen.generate(teks, config);
             }
         };
@@ -282,61 +311,162 @@ public class MainApp extends Application {
         new Thread(task).start();
     }
 
+    private VBox buatKartuSoal(Question q, boolean isBaru) {
+    Label lblNomor = new Label(); // teks diisi nanti oleh renomorSemuaKartu()
+    lblNomor.setStyle(
+        "-fx-font-weight: bold; -fx-font-size: 12px;" +
+        "-fx-text-fill: " + (isBaru ? C_SUCCESS : C_PRIMARY) + ";"
+    );
+
+    Label lblIsi = new Label(q.render());
+    lblIsi.setWrapText(true);
+    lblIsi.setStyle("-fx-font-size: 13px; -fx-text-fill: " + C_TEXT + ";");
+
+    Label lblKunci = new Label("Jawaban: " + q.getKunciJawaban());
+    lblKunci.setStyle("-fx-font-size: 11px; -fx-text-fill: " + C_SUCCESS + ";");
+
+    CheckBox cb = new CheckBox("Tandai soal ini perlu diperbaiki");
+    cb.setStyle("-fx-font-size: 11px; -fx-text-fill: " + C_DANGER + ";");
+
+    VBox kartu = new VBox(6, lblNomor, lblIsi, lblKunci, cb);
+    kartu.setPadding(new Insets(12));
+    kartu.setStyle(kartuStyle(false));
+    kartu.setUserData(new Object[]{q, cb, lblNomor, isBaru});
+
+    cb.selectedProperty().addListener((obs, ov, nv) ->
+        kartu.setStyle(kartuStyle(nv))
+    );
+
+    return kartu;
+}
+
     private void tampilkanSoalInteraktif(List<Question> soalList) {
-        soalContainer.getChildren().clear();
-        int nomor = 1;
-        for (Question q : soalList) {
-            String tipeRaw = q.getClass().getSimpleName()
-                .replace("FillInBlankQuestion",   "Isian")
-                .replace("TrueFalseQuestion",      "Benar / Salah")
-                .replace("MultipleChoiceQuestion", "Pilihan Ganda")
-                .replace("ShortAnswerQuestion",    "Esai");
+    soalContainer.getChildren().clear();
+    for (Question q : soalList) {
+        VBox kartu = buatKartuSoal(q, false); // false = bukan soal baru
+        soalContainer.getChildren().add(kartu);
+    }
+    renomorSemuaKartu();
+}
 
-            // Header kartu
-            Label lblNomor = new Label("Soal " + nomor + "  ·  " + tipeRaw);
-            lblNomor.setStyle(
-                "-fx-font-weight: bold; -fx-font-size: 12px;" +
-                "-fx-text-fill: " + C_PRIMARY + ";"
-            );
+   private void tampilkanSoalBaruDenganAnimasi(List<Question> soalBaru) {
+    for (Question q : soalBaru) {
+        VBox kartu = buatKartuSoal(q, true); // true = soal baru (label hijau + animasi)
+        kartu.setOpacity(0);
+        soalContainer.getChildren().add(kartu); // selalu ditambah di akhir = paling bawah
 
-            Label lblIsi = new Label(q.render());
-            lblIsi.setWrapText(true);
-            lblIsi.setStyle("-fx-font-size: 13px; -fx-text-fill: " + C_TEXT + ";");
+        FadeTransition fade = new FadeTransition(Duration.seconds(0.3), kartu);
+        fade.setFromValue(0);
+        fade.setToValue(1);
+        fade.play();
+    }
+    renomorSemuaKartu(); // re-render nomor 1, 2, 3... dari awal
+}
 
-            Label lblKunci = new Label("Jawaban: " + q.getKunciJawaban());
-            lblKunci.setStyle("-fx-font-size: 11px; -fx-text-fill: " + C_SUCCESS + ";");
+// Renomor ulang semua kartu yang ada di soalContainer secara berurutan
+private void renomorSemuaKartu() {
+    int nomor = 1;
+    for (javafx.scene.Node node : soalContainer.getChildren()) {
+        if (node instanceof VBox kartu) {
+            Object[] data = (Object[]) kartu.getUserData();
+            if (data != null && data.length >= 3) {
+                Question q = (Question) data[0];
+                Label lblNomor = (Label) data[2];
 
-            CheckBox cb = new CheckBox("Tandai soal ini perlu diperbaiki");
-            cb.setStyle("-fx-font-size: 11px; -fx-text-fill: " + C_DANGER + ";");
+                String tipeRaw = q.getClass().getSimpleName()
+                    .replace("FillInBlankQuestion",   "Isian")
+                    .replace("TrueFalseQuestion",      "Benar / Salah")
+                    .replace("MultipleChoiceQuestion", "Pilihan Ganda")
+                    .replace("ShortAnswerQuestion",    "Esai");
 
-            VBox kartu = new VBox(6, lblNomor, lblIsi, lblKunci, cb);
-            kartu.setPadding(new Insets(12));
-            kartu.setStyle(kartuStyle(false));
-            kartu.setUserData(new Object[]{q, cb});
+                boolean isBaru = data.length >= 4 && Boolean.TRUE.equals(data[3]);
+                String suffix = isBaru ? "  (baru)" : "";
 
-            cb.selectedProperty().addListener((obs, ov, nv) ->
-                kartu.setStyle(kartuStyle(nv))
-            );
-
-            soalContainer.getChildren().add(kartu);
-            nomor++;
+                lblNomor.setText("Soal " + nomor + "  ·  " + tipeRaw + suffix);
+                nomor++;
+            }
         }
     }
+}
 
     private void hapusSoalDitandai() {
-        List<javafx.scene.Node> toRemove = new ArrayList<>();
-        for (javafx.scene.Node node : soalContainer.getChildren()) {
-            if (node instanceof VBox) {
-                Object[] data = (Object[]) ((VBox) node).getUserData();
-                if (data != null && ((CheckBox) data[1]).isSelected()) {
-                    toRemove.add(node);
-                    soalTerakhir.remove(data[0]);
+    List<javafx.scene.Node> toRemove = new ArrayList<>();
+    int fib = 0, tf = 0, mc = 0, sa = 0;
+
+    for (javafx.scene.Node node : soalContainer.getChildren()) {
+        if (node instanceof VBox) {
+            Object[] data = (Object[]) ((VBox) node).getUserData();
+            if (data != null && ((CheckBox) data[1]).isSelected()) {
+                toRemove.add(node);
+                Question q = (Question) data[0];
+                soalTerakhir.remove(q);
+
+                String tipe = q.getClass().getSimpleName();
+                switch (tipe) {
+                    case "FillInBlankQuestion"   -> fib++;
+                    case "TrueFalseQuestion"      -> tf++;
+                    case "MultipleChoiceQuestion" -> mc++;
+                    case "ShortAnswerQuestion"    -> sa++;
                 }
             }
         }
-        soalContainer.getChildren().removeAll(toRemove);
-        labelStatus.setText(toRemove.size() + " soal dihapus. Sisa: " + soalTerakhir.size() + " soal.");
     }
+
+    int totalDihapus = toRemove.size();
+    soalContainer.getChildren().removeAll(toRemove);
+        renomorSemuaKartu(); // renomor ulang setelah ada yang dihapus
+
+
+    if (totalDihapus == 0) {
+        labelStatus.setText("Tidak ada soal yang ditandai untuk dihapus.");
+        return;
+    }
+
+    if (fib == 0 && tf == 0 && mc == 0 && sa == 0) {
+        labelStatus.setText(totalDihapus + " soal dihapus.");
+        return;
+    }
+
+    // Regenerasi soal pengganti sejumlah yang dihapus, di background thread
+    String teks = inputTeks.getText().trim();
+    if (teks.isEmpty()) {
+        labelStatus.setText(totalDihapus + " soal dihapus. (Tidak bisa regenerasi: teks input kosong)");
+        return;
+    }
+
+    int kesulitan = comboKesulitan.getValue().startsWith("1") ? 1
+                  : comboKesulitan.getValue().startsWith("2") ? 2 : 3;
+
+    QuizConfig configPengganti = new QuizConfig(fib, tf, mc, sa, kesulitan);
+
+    labelStatus.setText(totalDihapus + " soal dihapus. Membuat soal pengganti...");
+
+    final int fFib = fib, fTf = tf, fMc = mc, fSa = sa;
+
+    Task<List<Question>> task = new Task<>() {
+        @Override protected List<Question> call() throws Exception {
+            QuestionGenerator gen = comboMetode.getValue().contains("Gemini")
+                ? new ApiBasedGenerator(API_KEYS)
+                : new RuleBasedGenerator();
+            return gen.generate(teks, configPengganti);
+        }
+    };
+
+    task.setOnSucceeded(e -> {
+        List<Question> soalBaru = task.getValue();
+        soalTerakhir.addAll(soalBaru);
+        tampilkanSoalBaruDenganAnimasi(soalBaru);
+        labelStatus.setText(totalDihapus + " soal dihapus -> " + soalBaru.size() +
+            " soal baru digenerate sebagai pengganti.");
+    });
+
+    task.setOnFailed(e -> {
+        labelStatus.setText(totalDihapus + " soal dihapus. Gagal membuat pengganti: " +
+            task.getException().getMessage());
+    });
+
+    new Thread(task).start();
+}
 
     private void uploadPdf(Stage stage) {
         FileChooser fc = new FileChooser();
@@ -410,6 +540,60 @@ public class MainApp extends Application {
                 listRiwayat.getItems().add(r.toString());
         }
     }
+
+    private int[] saranTerakhir = new int[]{0, 0, 0, 0};
+
+    private void updateSaranJumlahSoal(String teks) {
+        if (teks == null || teks.trim().length() < 20) {
+            labelSaran.setText("Upload teks untuk lihat saran jumlah soal.");
+            saranTerakhir = new int[]{0, 0, 0, 0};
+            return;
+        }
+        saranTerakhir = analyzer.TextAnalyzer.sarankanJumlahSoal(teks);
+        labelSaran.setText(String.format(
+            "Saran: Isian=%d, B/S=%d, PG=%d, Esai=%d",
+            saranTerakhir[0], saranTerakhir[1], saranTerakhir[2], saranTerakhir[3]
+        ));
+    }
+
+    private void pakaiSaranJumlahSoal() {
+        if (saranTerakhir[0] == 0 && saranTerakhir[1] == 0 &&
+            saranTerakhir[2] == 0 && saranTerakhir[3] == 0) {
+            labelStatus.setText("Belum ada saran tersedia. Isi teks dulu.");
+            return;
+        }
+        spinnerFIB.getValueFactory().setValue(saranTerakhir[0]);
+        spinnerTF.getValueFactory().setValue(saranTerakhir[1]);
+        spinnerMC.getValueFactory().setValue(saranTerakhir[2]);
+        spinnerSA.getValueFactory().setValue(saranTerakhir[3]);
+        labelStatus.setText("Jumlah soal diatur sesuai saran.");
+    }
+
+    private void bukaFolderOutput() {
+    try {
+        String folderPath = System.getProperty("user.home") + "\\Desktop\\QuizOutput";
+        File folder = new File(folderPath);
+        if (!folder.exists()) folder.mkdirs();
+        java.awt.Desktop.getDesktop().open(folder);
+    } catch (Exception e) {
+        labelStatus.setText("Gagal membuka folder: " + e.getMessage());
+    }
+}
+
+private void hapusSatuRiwayat() {
+    int index = listRiwayat.getSelectionModel().getSelectedIndex();
+    if (index < 0) {
+        labelStatus.setText("Pilih dulu item riwayat yang mau dihapus.");
+        return;
+    }
+    List<QuizHistoryManager.RiwayatQuiz> semua = QuizHistoryManager.loadSemua();
+    if (index < semua.size()) {
+        semua.remove(index);
+        QuizHistoryManager.simpanUlangSemua(semua);
+        refreshRiwayat();
+        labelStatus.setText("Item riwayat dihapus.");
+    }
+}
 
     // ════════════════════════════════════════════════════════
     // STYLE HELPERS

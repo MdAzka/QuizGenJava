@@ -46,6 +46,10 @@ public class QuizHistoryManager {
         tulisKeFile(semua);
     }
 
+    public static void simpanUlangSemua(List<RiwayatQuiz> semua) {
+    tulisKeFile(semua);
+}
+
     // Load semua riwayat
     public static List<RiwayatQuiz> loadSemua() {
         List<RiwayatQuiz> hasil = new ArrayList<>();

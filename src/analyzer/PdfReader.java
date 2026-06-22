@@ -28,7 +28,10 @@ public class PdfReader {
                 throw new IOException("PDF tidak mengandung teks (mungkin PDF scan/gambar).");
             }
 
-            return teks.trim();
+            System.out.println("=== DEBUG: 500 karakter pertama dari PDF ===");
+System.out.println(teks.substring(0, Math.min(500, teks.length())));
+System.out.println("=== Jumlah newline ditemukan: " + teks.chars().filter(c -> c == '\n').count() + " ===");
+return teks.trim();
         }
     }
 }

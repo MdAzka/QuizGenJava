@@ -13,45 +13,91 @@ import java.util.List;
 public class ApiBasedGenerator implements QuestionGenerator {
 
     private static final String API_URL = 
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent";
     
-    private String apiKey;
+    private List<String> apiKeys;
 
-    public ApiBasedGenerator(String apiKey) {
-        this.apiKey = apiKey;
+
+
+public ApiBasedGenerator(String apiKeyTunggal) {
+    // Constructor lama tetap didukung untuk kompatibilitas
+    this.apiKeys = new ArrayList<>();
+    if (apiKeyTunggal != null && !apiKeyTunggal.isEmpty()) {
+        this.apiKeys.add(apiKeyTunggal);
     }
+}
+
+public ApiBasedGenerator(List<String> apiKeys) {
+    this.apiKeys = apiKeys;
+}
 
     @Override
-    public List<Question> generate(String teks, QuizConfig config) {
+public List<Question> generate(String teks, QuizConfig config) {
+    if (apiKeys == null || apiKeys.isEmpty()) {
+        System.out.println("Tidak ada API key tersedia. Fallback ke RuleBasedGenerator...");
+        return new RuleBasedGenerator().generate(teks, config);
+    }
+
+    String prompt = buatPrompt(teks, config);
+
+    for (int i = 0; i < apiKeys.size(); i++) {
+        String key = apiKeys.get(i);
         try {
-            String prompt = buatPrompt(teks, config);
-            String response = panggilAPI(prompt);
-            return parseResponse(response);
-        } catch (Exception e) {
-            System.out.println("Gemini API Error: " + e.getMessage());
-            System.out.println("Fallback ke RuleBasedGenerator...");
-            return new RuleBasedGenerator().generate(teks, config);
+            System.out.println("Mencoba API key #" + (i + 1) + "...");
+            String response = panggilAPI(prompt, key);
+            List<Question> hasil = parseResponse(response);
+            System.out.println("Berhasil menggunakan API key #" + (i + 1));
+            return hasil;
+         } catch (Exception e) {
+    System.out.println("=== ERROR LENGKAP key #" + (i + 1) + " ===");
+    System.out.println(e.getMessage());
+    System.out.println("================================");
+    continue;
         }
     }
 
-    private String buatPrompt(String teks, QuizConfig config) {
-        return "Kamu adalah generator soal quiz. Buat soal dari teks berikut.\n\n" +
-            "TEKS:\n" + teks + "\n\n" +
-            "BUAT SOAL BERIKUT (satu per baris, format PERSIS seperti contoh):\n" +
-            "- " + config.getJumlahFillInBlank() + " soal ISIAN\n" +
-            "- " + config.getJumlahTrueFalse() + " soal BENAR_SALAH\n" +
-            "- " + config.getJumlahMultipleChoice() + " soal PILIHAN_GANDA\n" +
-            "- " + config.getJumlahShortAnswer() + " soal ESAI\n\n" +
-            "FORMAT WAJIB:\n" +
-            "ISIAN|kalimat dengan _____ sebagai jawaban|jawaban\n" +
-            "BENAR_SALAH|pernyataan|Benar\n" +
-            "PILIHAN_GANDA|pertanyaan|A) pilihan1|B) pilihan2|C) pilihan3|D) pilihan4|A)\n" +
-            "ESAI|pertanyaan esai|kata kunci jawaban\n\n" +
-            "PENTING: Tulis soal saja tanpa penjelasan tambahan!";
-    }
+    System.out.println("Semua API key gagal. Fallback ke RuleBasedGenerator...");
+    return new RuleBasedGenerator().generate(teks, config);
+}
 
-    private String panggilAPI(String prompt) throws Exception {
-        String urlStr = API_URL + "?key=" + apiKey;
+    
+     private String buatPrompt(String teks, QuizConfig config) {
+    int kesulitan = config.getTingkatKesulitan();
+    String deskripsiLevel = switch (kesulitan) {
+        case 1 -> "Level 1 (Mudah): Soal tentang fakta langsung, definisi dasar, istilah yang sering muncul. Jawaban tersurat jelas di teks.";
+        case 2 -> "Level 2 (Sedang): Soal tentang hubungan antar konsep, penerapan definisi. Butuh pemahaman, bukan sekadar hafalan.";
+        default -> "Level 3 (Sulit): Soal tentang konsep abstrak, istilah teknis khusus, perbedaan halus antar konsep. Distraktor pilihan ganda dibuat semirip mungkin dengan jawaban benar.";
+    };
+
+    return "Kamu adalah generator soal quiz profesional untuk materi akademik.\n\n" +
+        "INSTRUKSI WAJIB (HARUS DIIKUTI):\n" +
+        "1. Buat soal HANYA dari konsep, definisi, fakta, dan penjelasan akademik dalam teks.\n" +
+        "2. ABAIKAN SEPENUHNYA: alamat email, URL, nama jurnal, volume/nomor penerbitan, " +
+        "tahun publikasi, nama penulis, nomor halaman, DOI, ISSN, copyright notice, " +
+        "referensi/daftar pustaka, dan semua metadata penerbitan.\n" +
+        "3. Soal harus dapat dipahami tanpa melihat teks asli — hindari pertanyaan yang " +
+        "merujuk 'menurut teks...' atau 'pada paragraf...'.\n" +
+        "4. Gunakan bahasa yang sama dengan teks (Indonesia -> soal Indonesia, Inggris -> soal Inggris).\n" +
+        "5. Jika teks tidak cukup mengandung konten akademik untuk dibuat soal (misalnya hanya " +
+        "berisi template formatting, instruksi penulisan, atau metadata), kembalikan teks kosong saja " +
+        "tanpa membuat soal sama sekali.\n\n" +
+        "TINGKAT KESULITAN: " + deskripsiLevel + "\n\n" +
+        "TEKS MATERI:\n" + teks + "\n\n" +
+        "BUAT SOAL BERIKUT (satu per baris, format PERSIS seperti contoh):\n" +
+        "- " + config.getJumlahFillInBlank() + " soal ISIAN\n" +
+        "- " + config.getJumlahTrueFalse() + " soal BENAR_SALAH\n" +
+        "- " + config.getJumlahMultipleChoice() + " soal PILIHAN_GANDA\n" +
+        "- " + config.getJumlahShortAnswer() + " soal ESAI\n\n" +
+        "FORMAT WAJIB:\n" +
+        "ISIAN|kalimat dengan _____ sebagai jawaban|jawaban\n" +
+        "BENAR_SALAH|pernyataan|Benar\n" +
+        "PILIHAN_GANDA|pertanyaan|A) pilihan1|B) pilihan2|C) pilihan3|D) pilihan4|A)\n" +
+        "ESAI|pertanyaan esai|kata kunci jawaban\n\n" +
+        "PENTING: Tulis soal saja tanpa penjelasan tambahan! Jangan tulis apapun selain baris soal.";
+}
+
+    private String panggilAPI(String prompt, String key) throws Exception {
+    String urlStr = API_URL + "?key=" + key;
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
@@ -81,27 +127,37 @@ public class ApiBasedGenerator implements QuestionGenerator {
         br.close();
 
         if (code != 200) {
-            throw new Exception("HTTP " + code + ": " + sb.toString());
-        }
+    System.out.println("=== DEBUG: Body request yang dikirim (300 karakter pertama) ===");
+    System.out.println(body.substring(0, Math.min(300, body.length())));
+    throw new Exception("HTTP " + code + ": " + sb.toString());
+}
 
         return ekstrakTeks(sb.toString());
     }
 
     private String ekstrakTeks(String json) {
-        String cari = "\"text\": \"";
-        int start = json.indexOf(cari);
-        if (start == -1) return "";
-        start += cari.length();
-        int end = json.indexOf("\"", start);
-        // Cari closing quote yang bukan escaped
-        while (end != -1 && json.charAt(end - 1) == '\\') {
-            end = json.indexOf("\"", end + 1);
-        }
-        return json.substring(start, end)
-            .replace("\\n", "\n")
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\");
+    int start = json.indexOf("\"text\"");
+    if (start == -1) return "";
+    
+    // Cari posisi tanda kutip pembuka nilai (setelah "text" lalu : lalu spasi opsional lalu ")
+    int colonPos = json.indexOf(":", start);
+    if (colonPos == -1) return "";
+    
+    int quoteStart = json.indexOf("\"", colonPos);
+    if (quoteStart == -1) return "";
+    
+    start = quoteStart + 1;
+    int end = json.indexOf("\"", start);
+    while (end != -1 && json.charAt(end - 1) == '\\') {
+        end = json.indexOf("\"", end + 1);
     }
+    if (end == -1) return "";
+
+    return json.substring(start, end)
+        .replace("\\n", "\n")
+        .replace("\\\"", "\"")
+        .replace("\\\\", "\\");
+}
 
     private List<Question> parseResponse(String teks) {
         List<Question> hasil = new ArrayList<>();
@@ -110,6 +166,18 @@ public class ApiBasedGenerator implements QuestionGenerator {
         for (String b : baris) {
             b = b.trim();
             if (b.isEmpty()) continue;
+
+            
+            // Post-processing filter: buang baris yang masih mengandung metadata
+
+            String bLower = b.toLowerCase();
+        if (bLower.contains("@") || bLower.contains("http") ||
+            bLower.contains("doi") || bLower.contains("issn") ||
+            bLower.contains("vol.") || bLower.contains("no.") ||
+            bLower.contains("pp.")) {
+            System.out.println("Skip soal mengandung metadata: " + b);
+            continue;
+        }
 
             try {
                 String[] bagian = b.split("\\|");
@@ -162,9 +230,11 @@ public class ApiBasedGenerator implements QuestionGenerator {
     }
 
     private String escapeJson(String s) {
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "");
+    return s.replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "")
+            .replace("\t", "\\t")
+            .replaceAll("[\\x00-\\x1F]", ""); // buang karakter kontrol non-printable
     }
 }
